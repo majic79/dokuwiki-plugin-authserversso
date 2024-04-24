@@ -1,0 +1,7 @@
+base    authserversso
+author  Chris Marr
+email   cdabone@gmail.com
+date    2024-04-24
+name    Server SSO Authentication plugin
+desc    Allow authentication against any SSO mechanism that sets server/environment variables
+url     http://www.dokuwiki.org/plugin:authserversso
