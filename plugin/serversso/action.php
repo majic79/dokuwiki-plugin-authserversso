@@ -1,14 +1,10 @@
 <?php
-// must be run within Dokuwiki
-if(!defined('DOKU_INC')) die();
+use dokuwiki\Extension\ActionPlugin;
 
-//$active = ( $conf['authtype'] == 'authserversso' );
-
-class action_plugin_authserversso extends DokuWiki_Action_Plugin {
+class action_plugin_authserversso extends ActionPlugin {
+	/*
 	public function __construct() {
 		global $active;
-		
-		$authClass = get_class($auth);
 		
 		//dbglog("authserversso: Action constructor: {$authClass}");
 		//dbglog('authserversso: Disable login');
@@ -20,9 +16,8 @@ class action_plugin_authserversso extends DokuWiki_Action_Plugin {
 		$conf['disableactions'] = implode(',', $disableactions);
 		$conf['autopasswd'] = 0;
 	}
+	*/
 	function register(Doku_Event_Handler $controller){
-		global $auth;
-
 		// dbglog('authserversso: Register hooks');
 		//$controller->register_hook('ACTION_ACT_PREPROCESS', 'BEFORE', $this, 'clean_global_auth', NULL);
 		$controller->register_hook('ACTION_ACT_PREPROCESS', 'AFTER', $this, 'skip_login_action', NULL);
@@ -42,7 +37,7 @@ class action_plugin_authserversso extends DokuWiki_Action_Plugin {
 	
 	function skip_login_action(&$event, $param) {
 		if ($event->data == 'login') {
-			act_redirect($ID, 'show');
+			send_redirect($ID, 'show');
 		}
 	}	
 	

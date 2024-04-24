@@ -1,19 +1,18 @@
 <?php
-// must be run within Dokuwiki
-if(!defined('DOKU_INC')) die();
+use dokuwiki\Extension\AuthPlugin;
+use dokuwiki\Logger;
 
-define('AUTH_USERFILE',DOKU_CONF.'users.auth.php');
-
-class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
+class auth_plugin_authserversso extends AuthPlugin {
 	const CONF_VAR_AUTH_ID = 'auth_var_id';
 	const CONF_VAR_AUTH_EMAIL = 'auth_var_email';
 	const CONF_VAR_AUTH_REALNAME = 'auth_var_realname';
+	const CONF_AUTH_USERFILE = 'auth_userfile';
 
 	protected $users = null;
 
 	protected $_pattern = array();
 	
-  protected $_pregsplit_safe = false;
+	protected $_pregsplit_safe = false;
 	
 	protected $globalConf = array();
 	 
@@ -22,60 +21,55 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
     
 	public function __construct() {
 		parent::__construct();
-		
-		if(!@is_readable(AUTH_USERFILE)) {
+
+		if(!@is_readable(this->getConf(self::CONF_AUTH_USERFILE))) {
 			$this->success = false;
 		} else {
 			$this->cando['external'] = true;
 
-			if(@is_writable(AUTH_USERFILE)) {
-				//$this->cando['addUser'] = true;
-				//$this->cando['delUser'] = true;
-				//$this->cando['modLogin'] = true;
-				// $this->cando['modPass'] = true;
-				$this->cando['modMail'] = true;
-				$this->cando['modName'] = true;
+			if(@is_writable(this->getConf(self::CONF_AUTH_USERFILE))) {
+				$this->cando['addUser']   = true;
+				//$this->cando['delUser']   = false;
+				//$this->cando['modLogin']  = false;
+				//$this->cando['modPass']   = false;
+				$this->cando['modMail']   = true;
+				$this->cando['modName']   = true;
 				$this->cando['modGroups'] = true;
 			}
-			$this->cando['logout'] = false;
-			$this->cando['getUsers'] = true;
+			$this->cando['getUsers']     = true;
 			$this->cando['getUserCount'] = true;
+			$this->cando['getGroups']    = true;
 		}
 
 		$this->_pregsplit_safe = version_compare(PCRE_VERSION,'6.7','>=');
 		$this->loadConfig();
-		$this->success = true;
+		//$this->success = true;
 	}
     
 	// Required
 	public function checkPass($user, $pass) {
-		dbglog("authserversso: checkPass '{$user}':'{$pass}' ");
-		//return ($user == $this->cleanUser($_SERVER['PHP_AUTH_USER']) && $pass == $_SERVER['PHP_AUTH_PW']);		
+		msg("authserversso: checkPass '{$user}':'{$pass}' ");
 		return $this->trustExternal($user, $pass);
-		// $userinfo = $this->getUserData($user);
-		// if($userinfo === false) return false;
-		
-		// return auth_verifyPassword($pass, $this->users[$user]['pass']);
 	}
 	
 	public function getUserData($user, $requireGroups=true) {
-		dbglog("authserversso: getUserData {$user}");
-		if($this->users === null) $this->_loadUserData();
-		return isset($this->users[$user]) ? $this->users[$user] : false;
+		Logger::debug("authserversso: getUserData {$user}");
+		if($this->users === null) $this->loadUserData();
+		return $this->users[$user] ?? false;
 	}
 	
 	protected function _createUserLine($user, $pass, $name, $mail, $grps) {
-		$groups   = join(',', $grps);
-		$userline = array($user, $pass, $name, $mail, $groups);
+		$groups   = implode(',', $grps);
+		$userline = [$user, $pass, $name, $mail, $groups];
 		$userline = str_replace('\\', '\\\\', $userline); // escape \ as \\
 		$userline = str_replace(':', '\\:', $userline); // escape : as \:
-		$userline = join(':', $userline)."\n";
+		$userline = str_replace('#', '\\#', $userline); // escape # as \#
+		$userline = implode(':', $userline)."\n";
 		return $userline;
 	}	
 	
 	public function createUser($user, $pwd, $name, $mail, $grps = null) {
-		global $conf;
-		dbglog("authserversso: createUser {$user}");
+		msg("authserversso: createUser {$user}");
 
 		// user mustn't already exist
 		if($this->getUserData($user) !== false) {
@@ -91,7 +85,7 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 		// prepare user line
 		$userline = $this->_createUserLine($user, $pass, $name, $mail, $grps);
 
-		if(!io_saveFile(AUTH_USERFILE, $userline, true)) {
+		if(!io_saveFile(this->getConf(self::CONF_AUTH_USERFILE), $userline, true)) {
 			msg($this->getLang('writefail'), -1);
 			return null;
 		}
@@ -102,7 +96,8 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 	
 	public function modifyUser($user, $changes) {
 		global $ACT;
-		dbglog("authserversso: modifyUser {$user}");
+		global $conf;
+		Logger::debug("authserversso: modifyUser {$user}");
 
 		// sanity checks, user must already exist and there must be something to change
 		if(($userinfo = $this->getUserData($user)) === false) {
@@ -131,7 +126,7 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 
 		$userline = $this->_createUserLine($newuser, $userinfo['pass'], $userinfo['name'], $userinfo['mail'], $userinfo['grps']);
 
-		if(!io_replaceInFile(AUTH_USERFILE, '/^'.$user.':/', $userline, true)) {
+		if(!io_replaceInFile(this->getConf(self::CONF_AUTH_USERFILE), '/^'.$user.':/', $userline, true)) {
 			msg('There was an error modifying your user data. You may need to register again.', -1);
 			// FIXME, io functions should be fail-safe so existing data isn't lost
 			$ACT = 'register';
@@ -144,9 +139,9 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 	
 	public function deleteUsers($users) {
 		if(!is_array($users) || empty($users)) return 0;
-		dbglog('authserversso: deleteUsers');
+		Logger::debug('authserversso: deleteUsers');
 
-		if($this->users === null) $this->_loadUserData();
+		if($this->users === null) $this->loadUserData();
 
 		$deleted = array();
 		foreach($users as $user) {
@@ -161,21 +156,21 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 		if(empty($deleted)) return 0;
 
 		$pattern = '/^('.join('|', $deleted).'):/';
-		if (!io_deleteFromFile(AUTH_USERFILE, $pattern, true)) {
+		if (!io_deleteFromFile(this->getConf(self::CONF_AUTH_USERFILE), $pattern, true)) {
 			msg($this->getLang('writefail'), -1);
 			return 0;
 		}
 
 		// reload the user list and count the difference
 		$count = count($this->users);
-		$this->_loadUserData();
+		$this->loadUserData();
 		$count -= count($this->users);
 		return $count;
 	}
 	
 	public function getUserCount($filter = array()) {
-		dbglog('authserversso: getUserCount');
-		if($this->users === null) $this->_loadUserData();
+		Logger::debug('authserversso: getUserCount');
+		if($this->users === null) $this->loadUserData();
 
 		if(!count($filter)) return count($this->users);
 
@@ -190,8 +185,8 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 	}
 
 	public function retrieveUsers($start = 0, $limit = 0, $filter = array()) {
-		dbglog('authserversso: retrieveUsers');
-		if($this->users === null) $this->_loadUserData();
+		Logger::debug('authserversso: retrieveUsers');
+		if($this->users === null) $this->loadUserData();
 
 		ksort($this->users);
 
@@ -224,24 +219,32 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 		return cleanID(str_replace(':', $conf['sepchar'], $group));
 	}
  
-	protected function _loadUserData(){
-		dbglog('authserversso: load user data');
-		$this->users = $this->_readUserFile(AUTH_USERFILE);
-	
+	protected function loadUserData(){
+		Logger::debug('authserversso: load user data');
+		$this->users = $this->readUserFile(this->getConf(self::CONF_AUTH_USERFILE));
+		/*
+		if (!empty($config_cascade['plainauth.users']['protected'])) {
+            $protected = $this->readUserFile($config_cascade['serversso.users']['protected']);
+            foreach (array_keys($protected) as $key) {
+                $protected[$key]['protected'] = true;
+            }
+            $this->users = array_merge($this->users, $protected);
+        }
+		*/
 	}
 	
-	protected function _readUserFile($file) {
+	protected function readUserFile($file) {
 		$users = array();
 		if(!file_exists($file)) return $users;
 		
-		dbglog('authserversso: read user file');
+		Logger::debug('authserversso: read user file');
 		$lines = file($file);
 		foreach($lines as $line) {
 			$line = preg_replace('/#.*$/', '', $line); //ignore comments
 			$line = trim($line);
 			if(empty($line)) continue;
 
-			$row = $this->_splitUserData($line);
+			$row = $this->spliUserData($line);
 			$row = str_replace('\\:', ':', $row);
 			$row = str_replace('\\\\', '\\', $row);
 
@@ -254,13 +257,19 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 		}
 		return $users;
 	}
-	protected function _splitUserData($line){
+	protected function spliUserData($line){
 		// due to a bug in PCRE 6.6, preg_split will fail with the regex we use here
 		// refer github issues 877 & 885
-		if ($this->_pregsplit_safe){
-		return preg_split('/(?<![^\\\\]\\\\)\:/', $line, 5);       // allow for : escaped as \:
+		//if ($this->_pregsplit_safe){
+		$row = preg_split('/(?<![^\\\\]\\\\)\:/', $line, 5);       // allow for : escaped as \:
+		//}
+
+		if (count($row) < 5) {
+		    $row = array_pad($row, 5, '');
+			Logger::error('User row with less than 5 fields', $row);
 		}
 
+		/*
 		$row = array();
 		$piece = '';
 		$len = strlen($line);
@@ -277,7 +286,7 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 			$piece .= $line[$i];
 		}
 		$row[] = $piece;
-
+		*/
 		return $row;
 	}		
 	
@@ -315,13 +324,13 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 		global $conf;
 		global $auth;
 		
-		dbglog('authserversso: trustExternal');
+		Logger::debug('authserversso: trustExternal');
 
 		//$do = array_key_exists('do', $_REQUEST) ? $_REQUEST['do'] : null;
 		
 		//Got a session already ?
 		if($this->hasSession()) {
-			dbglog('authserversso: Session found');
+			Logger::debug('authserversso: Session found');
 			return true;
 		}
 		$userSso = $this->cleanUser($this->getSSOId());
@@ -336,41 +345,41 @@ class auth_plugin_authserversso extends DokuWiki_Auth_Plugin {
 			}
 		}
 		if($data == false) {
-			dbglog('authserversso: could not get user');
+			Logger::debug('authserversso: could not get user');
 			return false;
 		}
 		$this->setSession($userSso, $data['grps'], $data['mail'], $data['name']);
-		dbglog('authserversso: authenticated user');
+		Logger::debug('authserversso: authenticated user');
 		return true;
 	}
     
 	private function getSSOId() {
-		return $this->getServerVar($this->conf[self::CONF_VAR_AUTH_ID]);
+		return $this->getServerVar($this->getConf(self::CONF_VAR_AUTH_ID));
 	}
 	
 	private function getSSOMail() {
-		$mail = $this->getServerVar($this->conf[self::CONF_VAR_AUTH_EMAIL]);
+		$mail = $this->getServerVar($this->getConf(self::CONF_VAR_AUTH_EMAIL));
 		if(!$mail || !mail_isvalid($mail)) return null;
 		return $mail;
 	}
 
 	private function getSSOName() {
-		return $this->getServerVar($this->conf[self::CONF_VAR_AUTH_REALNAME]);
+		return $this->getServerVar($this->getConf(self::CONF_VAR_AUTH_REALNAME));
 	}
 	
 	private function getServerVar($varName) {
 			if(is_null($varName)) return null;
 			if(!array_key_exists($varName, $_SERVER)) return null;
 			$varVal = $_SERVER[$varName];
-			dbglog("authserversso: getServerVar {$varName}:{$varVal}");
+			Logger::debug("authserversso: getServerVar {$varName}:{$varVal}");
 			return $varVal;
 	}
 		
 	private function hasSession() {
 			global $USERINFO;
-			dbglog('authserversso: check hasSession');
+			Logger::debug('authserversso: check hasSession');
 			if(!empty($_SESSION[DOKU_COOKIE]['auth']['info'])) {
-				dbglog('authserversso: Session found');
+				Logger::debug('authserversso: Session found');
 				$USERINFO['name'] = $_SESSION[DOKU_COOKIE]['auth']['info']['name'];
 				$USERINFO['mail'] = $_SESSION[DOKU_COOKIE]['auth']['info']['mail'];
 				$USERINFO['grps'] = $_SESSION[DOKU_COOKIE]['auth']['info']['grps'];
