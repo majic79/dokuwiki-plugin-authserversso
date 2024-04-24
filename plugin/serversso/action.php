@@ -36,6 +36,7 @@ class action_plugin_authserversso extends ActionPlugin {
 	}
 	
 	function skip_login_action(&$event, $param) {
+		global $ID;
 		if ($event->data == 'login') {
 			send_redirect($ID, 'show');
 		}

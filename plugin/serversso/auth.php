@@ -22,12 +22,12 @@ class auth_plugin_authserversso extends AuthPlugin {
 	public function __construct() {
 		parent::__construct();
 
-		if(!@is_readable(this->getConf(self::CONF_AUTH_USERFILE))) {
+		if(!@is_readable($this->getConf(self::CONF_AUTH_USERFILE))) {
 			$this->success = false;
 		} else {
 			$this->cando['external'] = true;
 
-			if(@is_writable(this->getConf(self::CONF_AUTH_USERFILE))) {
+			if(@is_writable($this->getConf(self::CONF_AUTH_USERFILE))) {
 				$this->cando['addUser']   = true;
 				//$this->cando['delUser']   = false;
 				//$this->cando['modLogin']  = false;
