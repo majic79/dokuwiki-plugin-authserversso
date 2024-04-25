@@ -19,20 +19,8 @@ class action_plugin_authserversso extends ActionPlugin {
 	*/
 	function register(Doku_Event_Handler $controller){
 		// dbglog('authserversso: Register hooks');
-		//$controller->register_hook('ACTION_ACT_PREPROCESS', 'BEFORE', $this, 'clean_global_auth', NULL);
 		$controller->register_hook('ACTION_ACT_PREPROCESS', 'AFTER', $this, 'skip_login_action', NULL);
-		$controller->register_hook('HTML_REGISTERFORM_OUTPUT', 'BEFORE', $this, 'modify_register_form', NULL);
-	}
-	
-	function clean_global_auth(&$event, $param) {
-		if(isset($_SERVER['PHP_AUTH_USER'])) {
-			dbglog('authserversso: Clean PHP_AUTH_USER');
-			unset($_SERVER['PHP_AUTH_USER']);
-		}
-		if(isset($_SERVER['PHP_AUTH_PW'])) {
-			dbglog('authserversso: Clean PHP_AUTH_PW');
-			unset($_SERVER['PHP_AUTH_PW']);
-		}
+		//$controller->register_hook('HTML_REGISTERFORM_OUTPUT', 'BEFORE', $this, 'modify_register_form', NULL);
 	}
 	
 	function skip_login_action(&$event, $param) {

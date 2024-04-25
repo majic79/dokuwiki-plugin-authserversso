@@ -1,6 +1,8 @@
 <?php
+
 use dokuwiki\Extension\AuthPlugin;
 use dokuwiki\Logger;
+use dokuwiki\Utf8\Sort;
 
 class auth_plugin_authserversso extends AuthPlugin {
 	const CONF_VAR_AUTH_ID = 'auth_var_id';
@@ -10,26 +12,22 @@ class auth_plugin_authserversso extends AuthPlugin {
 
 	protected $users = null;
 
-	protected $_pattern = array();
-	
-	protected $_pregsplit_safe = false;
+	protected $pattern = array();
 	
 	protected $globalConf = array();
-	 
-	/* Server variables ($_SERVER) */
-	//protected $env = array();
-    
+	    
 	public function __construct() {
 		parent::__construct();
-
 		if(!@is_readable($this->getConf(self::CONF_AUTH_USERFILE))) {
+			Logger::error("authserversso: Userfile not readable '{$this->getConf(self::CONF_AUTH_USERFILE)}'");
 			$this->success = false;
 		} else {
 			$this->cando['external'] = true;
 
 			if(@is_writable($this->getConf(self::CONF_AUTH_USERFILE))) {
-				$this->cando['addUser']   = true;
-				//$this->cando['delUser']   = false;
+				Logger::debug("authserversso: Userfile is writable '{$this->getConf(self::CONF_AUTH_USERFILE)}'");
+				//$this->cando['addUser']   = true;
+				$this->cando['delUser']   = true;
 				//$this->cando['modLogin']  = false;
 				//$this->cando['modPass']   = false;
 				$this->cando['modMail']   = true;
@@ -41,14 +39,13 @@ class auth_plugin_authserversso extends AuthPlugin {
 			$this->cando['getGroups']    = true;
 		}
 
-		$this->_pregsplit_safe = version_compare(PCRE_VERSION,'6.7','>=');
 		$this->loadConfig();
-		//$this->success = true;
+		$this->success = true;
 	}
     
 	// Required
 	public function checkPass($user, $pass) {
-		msg("authserversso: checkPass '{$user}':'{$pass}' ");
+		Logger::debug("authserversso: checkPass '{$user}':'{$pass}' ");
 		return $this->trustExternal($user, $pass);
 	}
 	
@@ -58,7 +55,7 @@ class auth_plugin_authserversso extends AuthPlugin {
 		return $this->users[$user] ?? false;
 	}
 	
-	protected function _createUserLine($user, $pass, $name, $mail, $grps) {
+	protected function createUserLine($user, $pass, $name, $mail, $grps) {
 		$groups   = implode(',', $grps);
 		$userline = [$user, $pass, $name, $mail, $groups];
 		$userline = str_replace('\\', '\\\\', $userline); // escape \ as \\
@@ -69,7 +66,7 @@ class auth_plugin_authserversso extends AuthPlugin {
 	}	
 	
 	public function createUser($user, $pwd, $name, $mail, $grps = null) {
-		msg("authserversso: createUser {$user}");
+		Logger::debug("authserversso: createUser {$user}");
 
 		// user mustn't already exist
 		if($this->getUserData($user) !== false) {
@@ -83,10 +80,10 @@ class auth_plugin_authserversso extends AuthPlugin {
 		if(!is_array($grps)) $grps = array($conf['defaultgroup']);
 
 		// prepare user line
-		$userline = $this->_createUserLine($user, $pass, $name, $mail, $grps);
+		$userline = $this->createUserLine($user, $pass, $name, $mail, $grps);
 
 		if(!io_saveFile(this->getConf(self::CONF_AUTH_USERFILE), $userline, true)) {
-			msg($this->getLang('writefail'), -1);
+			Logger::error($this->getLang('writefail'), -1);
 			return null;
 		}
 
@@ -124,9 +121,9 @@ class auth_plugin_authserversso extends AuthPlugin {
 			$userinfo[$field] = $value;
 		}
 
-		$userline = $this->_createUserLine($newuser, $userinfo['pass'], $userinfo['name'], $userinfo['mail'], $userinfo['grps']);
+		$userline = $this->createUserLine($newuser, $userinfo['pass'], $userinfo['name'], $userinfo['mail'], $userinfo['grps']);
 
-		if(!io_replaceInFile(this->getConf(self::CONF_AUTH_USERFILE), '/^'.$user.':/', $userline, true)) {
+		if(!io_replaceInFile($this->getConf(self::CONF_AUTH_USERFILE), '/^'.$user.':/', $userline, true)) {
 			msg('There was an error modifying your user data. You may need to register again.', -1);
 			// FIXME, io functions should be fail-safe so existing data isn't lost
 			$ACT = 'register';
@@ -156,7 +153,7 @@ class auth_plugin_authserversso extends AuthPlugin {
 		if(empty($deleted)) return 0;
 
 		$pattern = '/^('.join('|', $deleted).'):/';
-		if (!io_deleteFromFile(this->getConf(self::CONF_AUTH_USERFILE), $pattern, true)) {
+		if (!io_deleteFromFile($this->getConf(self::CONF_AUTH_USERFILE), $pattern, true)) {
 			msg($this->getLang('writefail'), -1);
 			return 0;
 		}
@@ -169,34 +166,34 @@ class auth_plugin_authserversso extends AuthPlugin {
 	}
 	
 	public function getUserCount($filter = array()) {
-		Logger::debug('authserversso: getUserCount');
+		//Logger::debug('authserversso: getUserCount');
 		if($this->users === null) $this->loadUserData();
 
 		if(!count($filter)) return count($this->users);
 
 		$count = 0;
-		$this->_constructPattern($filter);
+		$this->constructPattern($filter);
 
 		foreach($this->users as $user => $info) {
-			$count += $this->_filter($user, $info);
+			$count += $this->filter($user, $info);
 		}
 
 		return $count;
 	}
 
 	public function retrieveUsers($start = 0, $limit = 0, $filter = array()) {
-		Logger::debug('authserversso: retrieveUsers');
+		//Logger::debug('authserversso: retrieveUsers');
 		if($this->users === null) $this->loadUserData();
 
-		ksort($this->users);
+		Sort::ksort($this->users);
 
 		$i     = 0;
 		$count = 0;
-		$out   = array();
-		$this->_constructPattern($filter);
+		$out   = [];
+		$this->constructPattern($filter);
 
 		foreach($this->users as $user => $info) {
-			if($this->_filter($user, $info)) {
+			if($this->filter($user, $info)) {
 				if($i >= $start) {
 					$out[$user] = $info;
 					$count++;
@@ -209,6 +206,22 @@ class auth_plugin_authserversso extends AuthPlugin {
 		return $out;
 	}
 	
+	public function retrieveGroups($start = 0, $limit = 0)
+    {
+        $groups = [];
+
+        if ($this->users === null) $this->loadUserData();
+        foreach ($this->users as $info) {
+            $groups = array_merge($groups, array_diff($info['grps'], $groups));
+        }
+        Sort::ksort($groups);
+
+        if ($limit > 0) {
+            return array_splice($groups, $start, $limit);
+        }
+        return array_splice($groups, $start);
+    }
+
 	public function cleanUser($user) {
 		global $conf;
 		return cleanID(str_replace(':', $conf['sepchar'], $user));
@@ -220,17 +233,8 @@ class auth_plugin_authserversso extends AuthPlugin {
 	}
  
 	protected function loadUserData(){
-		Logger::debug('authserversso: load user data');
-		$this->users = $this->readUserFile(this->getConf(self::CONF_AUTH_USERFILE));
-		/*
-		if (!empty($config_cascade['plainauth.users']['protected'])) {
-            $protected = $this->readUserFile($config_cascade['serversso.users']['protected']);
-            foreach (array_keys($protected) as $key) {
-                $protected[$key]['protected'] = true;
-            }
-            $this->users = array_merge($this->users, $protected);
-        }
-		*/
+		//Logger::debug('authserversso: load user data');
+		$this->users = $this->readUserFile($this->getConf(self::CONF_AUTH_USERFILE));
 	}
 	
 	protected function readUserFile($file) {
@@ -244,7 +248,7 @@ class auth_plugin_authserversso extends AuthPlugin {
 			$line = trim($line);
 			if(empty($line)) continue;
 
-			$row = $this->spliUserData($line);
+			$row = $this->splitUserData($line);
 			$row = str_replace('\\:', ':', $row);
 			$row = str_replace('\\\\', '\\', $row);
 
@@ -257,41 +261,19 @@ class auth_plugin_authserversso extends AuthPlugin {
 		}
 		return $users;
 	}
-	protected function spliUserData($line){
-		// due to a bug in PCRE 6.6, preg_split will fail with the regex we use here
-		// refer github issues 877 & 885
-		//if ($this->_pregsplit_safe){
+	protected function splitUserData($line){
 		$row = preg_split('/(?<![^\\\\]\\\\)\:/', $line, 5);       // allow for : escaped as \:
-		//}
 
 		if (count($row) < 5) {
 		    $row = array_pad($row, 5, '');
 			Logger::error('User row with less than 5 fields', $row);
 		}
 
-		/*
-		$row = array();
-		$piece = '';
-		$len = strlen($line);
-		for($i=0; $i<$len; $i++){
-			if ($line[$i]=='\\'){
-				$piece .= $line[$i];
-				$i++;
-				if ($i>=$len) break;
-			} else if ($line[$i]==':') {
-				$row[] = $piece;
-				$piece = '';
-				continue;
-			}
-			$piece .= $line[$i];
-		}
-		$row[] = $piece;
-		*/
 		return $row;
 	}		
 	
-	protected function _filter($user, $info) {
-		foreach($this->_pattern as $item => $pattern) {
+	protected function filter($user, $info) {
+		foreach($this->pattern as $item => $pattern) {
 			if($item == 'user') {
 				if(!preg_match($pattern, $user)) return false;
 			} else if($item == 'grps') {
@@ -303,10 +285,10 @@ class auth_plugin_authserversso extends AuthPlugin {
 		return true;
 	}
 	
-	protected function _constructPattern($filter) {
-		$this->_pattern = array();
+	protected function constructPattern($filter) {
+		$this->pattern = array();
 		foreach($filter as $item => $pattern) {
-			$this->_pattern[$item] = '/'.str_replace('/', '\/', $pattern).'/i'; // allow regex characters
+			$this->pattern[$item] = '/'.str_replace('/', '\/', $pattern).'/i'; // allow regex characters
 		}
 	}
 
@@ -318,24 +300,23 @@ class auth_plugin_authserversso extends AuthPlugin {
 	* @return  bool             true on successful auth
 	*/
 	function trustExternal($user, $pass, $sticky=false) {
-	//public function trustExternal() {
 		global $USERINFO;
 		global $ACT;
 		global $conf;
 		global $auth;
 		
-		Logger::debug('authserversso: trustExternal');
-
-		//$do = array_key_exists('do', $_REQUEST) ? $_REQUEST['do'] : null;
-		
 		//Got a session already ?
 		if($this->hasSession()) {
-			Logger::debug('authserversso: Session found');
+			//Logger::debug('authserversso: Session found');
 			return true;
 		}
+
+		Logger::debug('authserversso: trustExternal: No Session');
+
 		$userSso = $this->cleanUser($this->getSSOId());
 		$data = $this->getUserData($userSso);
 		if($data == false) {
+			Logger::debug('authserversso: trustExternal: user does not exist');
 			$mail = $this->getSSOMail();
 			$name = $this->getSSOName();
 			$pwd = auth_pwgen();
@@ -345,11 +326,11 @@ class auth_plugin_authserversso extends AuthPlugin {
 			}
 		}
 		if($data == false) {
-			Logger::debug('authserversso: could not get user');
+			Logger::debug('authserversso: trustExternal: could not get user');
 			return false;
 		}
 		$this->setSession($userSso, $data['grps'], $data['mail'], $data['name']);
-		Logger::debug('authserversso: authenticated user');
+		//Logger::debug('authserversso: authenticated user');
 		return true;
 	}
     
@@ -377,9 +358,9 @@ class auth_plugin_authserversso extends AuthPlugin {
 		
 	private function hasSession() {
 			global $USERINFO;
-			Logger::debug('authserversso: check hasSession');
+			//Logger::debug('authserversso: check hasSession');
 			if(!empty($_SESSION[DOKU_COOKIE]['auth']['info'])) {
-				Logger::debug('authserversso: Session found');
+				//Logger::debug('authserversso: Session found');
 				$USERINFO['name'] = $_SESSION[DOKU_COOKIE]['auth']['info']['name'];
 				$USERINFO['mail'] = $_SESSION[DOKU_COOKIE]['auth']['info']['mail'];
 				$USERINFO['grps'] = $_SESSION[DOKU_COOKIE]['auth']['info']['grps'];
