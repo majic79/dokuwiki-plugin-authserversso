@@ -66,6 +66,7 @@ class auth_plugin_authserversso extends AuthPlugin {
 	}	
 	
 	public function createUser($user, $pwd, $name, $mail, $grps = null) {
+		global $conf;
 		Logger::debug("authserversso: createUser {$user}");
 
 		// user mustn't already exist
@@ -82,7 +83,7 @@ class auth_plugin_authserversso extends AuthPlugin {
 		// prepare user line
 		$userline = $this->createUserLine($user, $pass, $name, $mail, $grps);
 
-		if(!io_saveFile(this->getConf(self::CONF_AUTH_USERFILE), $userline, true)) {
+		if(!io_saveFile($this->getConf(self::CONF_AUTH_USERFILE), $userline, true)) {
 			Logger::error($this->getLang('writefail'), -1);
 			return null;
 		}
